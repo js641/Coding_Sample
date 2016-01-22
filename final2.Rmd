@@ -1,0 +1,881 @@
+---
+title: "Final Exam STA 523"
+author: "JIE SUN"
+output: html_document
+runtime: shiny
+---
+##Sparse Matrix
+###Task 1: Validation
+is_valid_sparse function will validate the sparse matrix, testing that whether this sparse matrix satisfies the rule discribed in the instruction. We will be testing whether the input sparse matrix satisfies: 
+
++ The data type of input sparse is "list"
++ Test whether the list contains 3 element
++ Test whether the "nrow" and "ncol" element are of type of integer
++ Test whether the "nrow" and "ncol" has non zero value
++ Check whether the names are in the names of the list
++ Check the class of the df in sparse list equal to "data.frame" or not, check whether number of colomn equal to 3; Check whether the "row" and "col" column in df is of "integer" type and check whether the "val" in df is of numeric type
++ Check whether the maximum value in "row" column of df exceeds the value of "nrow" element in the list.
++ Check whether the maximum value in "col" column of df exceeds the value of "ncol" element in the list.
++ Check whether there exists any zeros in the "val" column in df
++ Check whether the order of "row" and "col" are correclty ordered
+
+```{r}
+is_valid_sparse = function (sparse_list) {
+  #Test whether the data type of input sparse list
+  if (typeof(sparse_list)!="list") return(FALSE)
+  #Test whether the list contains 3 element
+  if (length(sparse_list)!=3) return(FALSE)
+  #Test whether the "nrow" and "ncol" element are of type of integer
+  if (typeof(sparse_list$nrow)!="integer" | typeof(sparse_list$ncol)!="integer" ) return(FALSE)
+  #Test whether the "nrow" and "ncol" has non zero list
+  if (any(sparse_list$nrow>0,sparse_list$ncol>0)==FALSE) return(FALSE)
+  #Check whether the names are in the names of the list
+  if ("nrow" %in% names(sparse_list)==FALSE|"ncol" %in% names(sparse_list)==FALSE ) return(FALSE)
+  #Check the class of the df in sparse list equal to "data.frame" or not, check whether number of colomn equal to 3,
+  #check whether the "row" and "col" column in df is of "integer" type and check whether the "val" in df is of numeric type
+  if (class(sparse_list$df)!="data.frame" | ncol(sparse_list$df)!=3 | 
+      is.integer(sparse_list$df$row)==FALSE |is.integer(sparse_list$df$col)==FALSE |
+      is.numeric(sparse_list$df$val)==FALSE) return(FALSE) 
+  #Check whether the maximum value in "row" column of df exceeds the value of "nrow" element in the list.
+  #Check whether the maximum value in "col" column of df exceeds the value of "ncol" element in the list.
+  #Check whether there exists any zeros in the "val" column in df
+  #Check whether the order of "row" and "col" are correclty ordered
+  if( any(max(sparse_list$df$row) > sparse_list$nrow)==TRUE 
+      | any(max(sparse_list$df$col)>sparse_list$ncol)==TRUE
+      | any(sparse_list$df$val== 0)==TRUE
+      | all(order(sparse_list$df[,1],sparse_list$df[,2])==seq(1:nrow(sparse_list$df)))!=TRUE) {
+    return(FALSE)
+  } else {return(TRUE)}
+}
+```
+
+###Transform sparse matrix
+The "Transform_sparse_matrix" function accepts a sparse matrix as its argument and returns a dense matrix. The approach I adopted for writing this function is specified as below.
+
++ Test whether the input sparse matrix is valid
++ Initiate a matrix with "0" in it and preparing for restore the non-zero value in the sparse matrix.
++ Restore the dataframe in the sparse list which indicates non-zero values in the matrix
++ Match the non zero value specified with location in "non_zero_location" dataframe extracted from the sparse list with the correct location in a matrix.
+
+```{r}
+Transform_sparse_matrix = function (sparse_list) {
+  #Test whether the input sparse matrix is valid
+  stopifnot(is_valid_sparse(sparse_list))
+  #Initiate a matrix with "0" in it and preparing for restore the non-zero value in the sparse matrix
+  A_dense = matrix(0,nrow=sparse_list$nrow,ncol=sparse_list$ncol)
+  #Restore the dataframe in the sparse list which indicates non zero values in a matrix
+  non_zero_location=sparse_list[[3]]
+  #Match the non zero value specified with location in "non_zero_location" dataframe extracted from the sparse list with the correct location in a matrix.
+  for (i in 1:nrow(non_zero_location)) {
+    A_dense[non_zero_location$row[i],non_zero_location$col[i]]=non_zero_location$val[i]
+  }
+  return(A_dense)
+}
+```
+
+###Transform dense matrix
+"Transform_dense_matrix" function accepts a dense matrix as its argument and returns a sparse matrix. The approach I adopted in writing this function is specified as below.
+
++ Use base R function "which" to record the attributes of non-zero values in a matrix, which corresponds to the location of the non-zero value(row,col)
++ Also record the value matched with non-zero value location recorded previously
++ Turn the "val" into type of numeric
++ Order the dataframe recording non-zero value and location with "row" and then "col"
++ Create a list with three elements, "nrow", "ncol" and "df" recording non-zero values in a dense matrix
+
+```{r}
+Transform_dense_matrix = function (A) {
+  # Use base R function "which" to record the attributes of non-zero values in a matrix, which corresponds to the location of the non-zero value(row,col)
+  non_zero_df=data.frame(which(A != 0, arr.ind = TRUE))
+  val=rep(0,nrow(non_zero_df))
+  # Also record the value matched with non-zero value location recorded previously
+  for (i in 1:nrow(non_zero_df)) {
+    val[i]=A[non_zero_df$row[i],non_zero_df$col[i]]
+  }
+  #Turn the "val" into type of numeric
+  non_zero_df$val=as.numeric(val)
+  #Order the dataframe recording non-zero value and location with "row" and then "col"
+  non_zero_df=non_zero_df[order(non_zero_df[,1],non_zero_df[,2]),]
+  row.names(non_zero_df)=seq(1:length(val))
+  # Create a list with three elements, "nrow", "ncol" and "df" recording non-zero values in a dense matrix
+  sparse_list=list(nrow=dim(A)[1],ncol=dim(A)[2], df=as.data.frame(non_zero_df))
+  return(sparse_list)
+}
+```
+
+###Matrix Multiplication
+
+"matrix_multiplication" function will accept two matrices as its arguments (either sparse or dense) and calculates the matrix product of the two input matrices. If multiplying two sparse matrices the returned matrix should also be sparse. Any multiplication operation involving a dense matrix returns a dense matrix. I also check that the provided matrices are conforming first.
+
+####I.Function of multiplying two sparse matrix
+
+Since we are not allowed to turn any of the sparse matrix into a dense matrix while we have two sparse matrix as input, I initiate a new function "sparse_mul" that serves the purpose.
+
++ Check whether the input two sparse matrixes are valid by "is_valid_sparse" function and check that the dimension of two input sparse matrixes are appropriate;If not satisfied, then return "Error".
+
++ After checking the input sparse matrixes are valid. Initiate a matrix that gives that specifies dimension of the product should be.Then, we form "m1_df_new" to be a new dataframe that allows us to record all the locations and corresponding value in the first input sparse matrix. And "m2_df_new" to allowus to record all the locations and corresponding values in input sparse matrix 2. Also specify the same colomn names for as the "df" in sparse matrix list.
+
++ Since the "m1_df_new" should be identical with "df" in 1st sparse matrix in terms of non-zero value and the locations, we merge these two dataframe by "row" and "col" and keep in the value in "m1_df_new". This also works the same for "m2_df_new" and "df" in 2nd sparse matrix. Then, we have a complete dataframe that should record all the values given a sparse matrix.  
+
++  We changed the order of "row" and "col" in "joined_m2" which will gives us the same location as in "joined_m1", making it more convenient to multiply values in two dataframe.
+
++ Then we multiplied the two dataframe with the corresponding locations and store the value and restore.
+
++ Then we incorporate this "sparse_mul" function in our bigger function "matrix_multiplication" and we use "sparse_mul" to produce a sparse matrix that is the mulplication of two imput sparse matrixes.
+
+```{r,eval=FALSE}
+ sparse_mul = function (m1, m2) {
+#Check whether the input two sparse matrixes are valid by "is_valid_sparse" function and check that the dimension of two input sparse matrixes are appropriate;If not satisfied, then return "Error".
+    if (is_valid_sparse(m1)==TRUE & is_valid_sparse(m2)==TRUE) {
+      if (m1[[1]] != m2[[2]] | m1[[2]] != m2[[1]]) {
+        return("Error") 
+      } else {
+#After checking the input sparse matrixes are valid. Initiate a matrix that gives that specifies dimension of the product should be.Then, we form "m1_df_new" to be a new dataframe that allows us to record all the locations and corresponding value in the first input sparse matrix. And "m2_df_new" to allowus to record all the locations and corresponding values in input sparse matrix 2. Also specify the same colomn names for as the "df" in sparse matrix list.
+        product_sparse = matrix(0,nrow = m1[[1]],ncol = m2[[2]])
+        
+        m1_df_new=data.frame(cbind(sort(rep(seq(m1$nrow),m1$ncol)),
+                                   rep(seq(m1$ncol),m1$nrow),
+                                   rep(0,m1$nrow*m1$ncol)))
+        
+        m2_df_new=data.frame(cbind(sort(rep(seq(m2$nrow),m2$ncol)),
+                                   rep(seq(m2$ncol),m2$nrow),
+                                   rep(0,m2$nrow*m2$ncol)))
+    
+        colnames(m1_df_new) <-c("row","col","val")
+        colnames(m2_df_new) <-c("row","col","val")
+# Since the "m1_df_new" should be identical with "df" in 1st sparse matrix in terms of non-zero value and the locations, we merge these two dataframe by "row" and "col" and keep in the value in "m1_df_new". This also works the same for "m2_df_new" and "df" in 2nd sparse matrix. Then, we have a complete dataframe that should record all the values given a sparse matrix.  
+        joined_m1 = merge(m1_df_new, m1$df, by=c("row","col"), all.x=TRUE)
+        joined_m2 = merge(m2_df_new, m2$df, by=c("row","col"), all.x=TRUE)
+        
+        joined_m1[,4][which(is.na(joined_m1[,4]))]=0
+        joined_m2[,4][which(is.na(joined_m2[,4]))]=0
+        joined_m2=joined_m2[,c(2,1,3,4)]
+      # We changed the order of "row" and "col" in "joined_m2" which will gives us the same location as in "joined_m1", making it more convenient to multiply values in two dataframe.
+        joined_m2=joined_m2[order(joined_m2[,1],joined_m2[,2]),]
+      # Then we multiplied the two dataframe with the corresponding locations and store the value and restore. 
+        for (i in 1:m1[[1]]) {
+          for (j in 1:m2[[2]]) {
+            product_sparse[i,j]=sum(joined_m1[which(joined_m1[,1]==i),4] * 
+                                      joined_m2[which(joined_m2[,1]==j),4])
+          }
+        }
+        product_sparse = Transform_dense_matrix (product_sparse)
+        return(product_sparse)
+      }
+    }
+ }
+ if(is_valid_sparse(m1)==TRUE & is_valid_sparse(m2)==TRUE) {
+    product_sparse=sparse_mul(m1,m2)
+    return(product_sparse)
+  }
+
+```
+
+####Mixed Type of Matrix Input and Two Dense Matrix Multiplication
+
++ Check the type of input matrixes first. If the first matrix is a dense matrix and the second is a sparse matrix. We then need to check whether they have the appropriate dimensions for multiplication. Because whenever there's a dense matrix, there should always return a dense matrix. We first transformed the dense matrix into sparse and then use "sparse_mul" to multiply two sparse matrixes, then turn into dense matrix as output. The similar approach is adopted for the situation when the first input matrix is sparse and the 2nd is dense.
+
++ If the inputs are both dense matrix, after checking their types and whether dimensions are of appropriate type, then we just use the base R matrix multiplication sign "%*%" for multiplication, which also output a dense matrix.
+
+```{r,eval=FALSE}
+ matrix_multiplication = function (m1, m2) {
+# For input are both sparse matrix
+  sparse_mul = function (m1, m2) {
+   ...
+  }
+  
+  if(is_valid_sparse(m1)==TRUE & is_valid_sparse(m2)==TRUE) {
+    product_sparse=sparse_mul(m1,m2)
+    return(product_sparse)
+  }
+  #Check the type of input matrixes first. If the first matrix is a dense matrix and the second is a sparse matrix. We then need to check whether they have the appropriate dimensions for multiplication. Because whenever there's a dense matrix, there should always return a dense matrix. We first transformed the dense matrix into sparse and then use "sparse_mul" to multiply two sparse matrixes, then turn into dense matrix as output.
+  if (is.matrix(m1)==TRUE & is_valid_sparse(m2)==TRUE) {
+    m1= Transform_dense_matrix(m1)
+    if (m1[[1]] != m2[[2]] | m1[[2]] != m2[[1]]) {
+      return("Error") 
+    } else {
+      product_sparsed=sparse_mul(m1,m2)
+      product_dense=Transform_sparse_matrix(product_sparsed)
+      return(product_dense)
+    }
+  }
+    
+    if (is.matrix(m2)==TRUE & is_valid_sparse(m1)==TRUE) {
+      m2= Transform_dense_matrix(m2)
+      if (m1[[1]] != m2[[2]] | m1[[2]] != m2[[1]]) {
+        return("Error") 
+      } else {
+        product_sparsed=sparse_mul(m1,m2)
+        product_dense=Transform_sparse_matrix(product_sparsed)
+        return(product_dense)
+      }
+    }
+  #Use base are matrix multiplication "%*%" to multiply two dense matrix
+  if (is.matrix(m2)==TRUE & is.matrix(m1)==TRUE) {
+    if (dim(m1)[1] != dim(m2)[2] | dim(m1)[2] != dim(m2)[1]) {
+      return("Error") 
+    } else {
+      product_dense= m1 %*% m2
+      return(product_dense)
+    }
+  }
+    
+}
+
+```
+
+###Testthat
+####Test for "is_valid_sparse" function
+In testing our "is_valid_sparse" behaves properly to identify not valid sparse matrix, we are going to test for the following things;
+
++ Test for wrong data type. 
++ Test for wrong lables, which should be named correctly by "nrow" and "ncol" in two of three elemenets in a list. And the column names of "df" in the list should also be name corretly.
++ Test the wrongly ordered "row" and "col" in "df", which should first be ordered by "row" and then ordered by "col"
++ Test for wrongly matched sparse matrices. Maximum of "row" and "col" in dataframe does not exceed the actual nrow and ncol of matrix.
++ Test whether there identifies any zero values in df$val, where should only be restoring non-zero values in the matrix.
+
+```{r,eval=FALSE}
+test_that("Wrong date type", {
+  #initiate a matrix for dataframe coercion
+  m=matrix(nrow = 4,ncol = 3)
+  m[,1]=seq(1:4)
+  m[,2]=seq(2,5)
+  m[,3]=rnorm(4,0,1)
+  names(df)=c("row","col","val")
+  
+  #Wrong data type in "ncol"
+  df=data.frame(as.integer(m[,1]),as.integer(m[,2]),as.numeric(m[,3]))
+  names(df)=c("row","col","val")
+  sparse_list1 = list(nrow=as.integer(4),ncol=as.double(3),df=df)
+
+  #Wrong type of data type in "nrow"
+  df=data.frame(as.integer(m[,1]),as.integer(m[,2]),as.numeric(m[,3]))
+  names(df)=c("row","col","val")
+  sparse_list2 = list(nrow=as.double(4),ncol=as.integer(3),df=df)
+  
+  #Wrong data type in the dataframe of the list
+  df=data.frame(as.numeric(m[,1]),as.double(m[,2]),as.numeric(m[,3]))
+  names(df)=c("row","col","val")
+  sparse_list3 = list(nrow=4,ncol=3,df=df)
+  
+  #Correct type of data 
+  df=data.frame(as.integer(m[,1]),as.integer(m[,2]),as.numeric(m[,3]))
+  names(df)=c("row","col","val")
+
+  expect_false(is_valid_sparse(sparse_list1))
+  expect_false(is_valid_sparse(sparse_list2))
+  expect_false(is_valid_sparse(sparse_list3))
+})
+
+test_that("Wrong labels", {
+  #initiate a matrix for dataframe coercion
+  m=matrix(nrow = 4,ncol = 3)
+  m[,1]=seq(1:4)
+  m[,2]=c(1,2,3,3)
+  m[,3]=rnorm(4,0,1)
+  
+  #Wrong lable for "nrow" and "ncol"
+  df=data.frame(as.integer(m[,1]),as.integer(m[,2]),as.numeric(m[,3]))
+  names(df)=c("row","col","val")
+  sparse_list1= list(row=as.integer(4),col=as.integer(3),df=df)
+  
+  #Wrong lable for dataframe
+  df=data.frame(as.integer(m[,1]),as.integer(m[,2]),as.numeric(m[,3]))
+  names(df)=c("row","col","c")
+  sparse_list2= list(nrow=as.integer(4),ncol=as.integer(3),df=df)
+  
+  #Correctly labled list
+  df=data.frame(as.integer(m[,1]),as.integer(m[,2]),as.numeric(m[,3]))
+  names(df)=c("row","col","val")
+  sparse_list3= list(ncol=as.integer(3),nrow=as.integer(4),df=df)
+  
+  expect_false(is_valid_sparse(sparse_list1))
+  expect_false(is_valid_sparse(sparse_list2))
+  expect_true(is_valid_sparse(sparse_list3))
+})
+
+test_that("Wrongly matched sparse matrix", {
+  #initiate a matrix for dataframe coercion
+  m=matrix(nrow = 4,ncol = 3)
+  m[,1]=seq(1:4)
+  m[,2]=seq(2,5)
+  m[,3]=rnorm(4,0,1)
+
+  #Maximum of "col" in dataframe exceeds the actual ncol of matrix
+  df=data.frame(as.integer(m[,1]),as.integer(m[,2]),as.numeric(m[,3]))
+  names(df)=c("row","col","val")
+  sparse_list1 = list(nrow=as.integer(4),ncol=as.integer(3),df=df)
+  
+  #Maximum of "row" in dataframe exceeds the actual nrow of matrix
+  df=data.frame(as.integer(m[,1]),as.integer(m[,2]),as.numeric(m[,3]))
+  names(df)=c("row","col","val")
+  sparse_list2 = list(nrow=as.integer(3),ncol=as.integer(3),df=df)
+  
+  #Maximum of "row" and "col" in dataframe does not exceed the actual nrow and ncol of matrix
+  m=matrix(nrow = 4,ncol = 3)
+  m[,1]=seq(1:4)
+  m[,2]=c(1,1,2,3)
+  m[,3]=rnorm(4,0,1)
+  df=data.frame(as.integer(m[,1]),as.integer(m[,2]),as.numeric(m[,3]))
+  names(df)=c("row","col","val")
+  sparse_list3 = list(nrow=as.integer(4),ncol=as.integer(3),df=df)
+  
+  expect_false(is_valid_sparse(sparse_list1))
+  expect_false(is_valid_sparse(sparse_list2))
+  expect_true(is_valid_sparse(sparse_list3))
+  
+})
+
+test_that("Wrongly ordered row and col in df", {
+  #initiate a matrix for dataframe coercion
+  m=matrix(nrow = 4,ncol = 3)
+  m[,1]=c(2,1,3,4)
+  m[,2]=c(1,2,1,3)
+  m[,3]=rnorm(4,0,1)
+  
+  #Maximum of "col" in dataframe exceeds the actual ncol of matrix
+  df=data.frame(as.integer(m[,1]),as.integer(m[,2]),as.numeric(m[,3]))
+  names(df)=c("row","col","val")
+  sparse_list1 = list(nrow=as.integer(4),ncol=as.integer(3),df=df)
+  
+  #Maximum of "row" and "col" in dataframe does not exceed the actual nrow and ncol of matrix
+  m=matrix(nrow = 4,ncol = 3)
+  m[,1]=seq(1:4)
+  m[,2]=c(1,1,2,3)
+  m[,3]=rnorm(4,0,1)
+  df=data.frame(as.integer(m[,1]),as.integer(m[,2]),as.numeric(m[,3]))
+  names(df)=c("row","col","val")
+  sparse_list2 = list(nrow=as.integer(4),ncol=as.integer(3),df=df)
+  
+  expect_false(is_valid_sparse(sparse_list1))
+  expect_true(is_valid_sparse(sparse_list2))
+  
+})
+
+
+test_that("identify any zero values in df$val", {
+  #initiate a matrix for dataframe coercion
+  m=matrix(nrow = 4,ncol = 3)
+  m[,1]=seq(1:4)
+  m[,2]=c(1,1,2,3)
+  m[,3]=c(rep(0,3),1)
+  
+  #Maximum of "col" in dataframe exceeds the actual ncol of matrix
+  df=data.frame(as.integer(m[,1]),as.integer(m[,2]),as.numeric(m[,3]))
+  names(df)=c("row","col","val")
+  sparse_list1 = list(nrow=as.integer(4),ncol=as.integer(3),df=df)
+  
+  #Maximum of "row" and "col" in dataframe does not exceed the actual nrow and ncol of matrix
+  m=matrix(nrow = 4,ncol = 3)
+  m[,1]=seq(1:4)
+  m[,2]=c(1,1,2,3)
+  m[,3]=rnorm(4,0,1)
+  df=data.frame(as.integer(m[,1]),as.integer(m[,2]),as.numeric(m[,3]))
+  names(df)=c("row","col","val")
+  sparse_list2 = list(nrow=as.integer(4),ncol=as.integer(3),df=df)
+  
+  expect_false(is_valid_sparse(sparse_list1))
+  expect_true(is_valid_sparse(sparse_list2))
+  
+})
+```
+
+####Test for Transform_dense_matrix
+
++ First, initiate a dense matrix for tranformation.Transform the dense matrix into sparse matrix. Thus, if the "Transform_dense_matrix" functions properly, then the output of this function should return the same object as the true sparse matrix. I incorporate 5 tests in 5 test_that.
+
++ Test whether the Tranform_dense_matrix get the correct dimension.
++ Test whether the df correctly captures the non-zero value in dense matrix.
++ Test whether the df correctly captures the order of the non-zero value in the dense matrix
++ Test whether the df correctly captures the value of the dense matrix.
+
+```{r,eval=FALSE}
+#Initiate a dense matrix for tranformation.
+A = matrix(c(0.0000000, -1.2144736, 0.0000000,  2.1060456,
+      0.9140117,  0.0000000, 0.0000000,  0.0000000,
+      0.0000000,  0.0000000, 0.7074838, -0.8678475,
+      -1.5930475, -0.7063034, 0.0000000,  0.0000000,
+      0.0000000,  1.6195045, 0.0000000,  0.0000000),nrow = 5,ncol = 4,byrow = T)
+#Transform the dense matrix into sparse matrix. Thus, if the "Transform_dense_matrix" functions properly, then the output of this function should return the same object as the true sparse matrix.
+SparseA=Transform_dense_matrix(A)
+
+
+test_that("Whether the Tranform_dense_matrix get the correct dimension", {
+  #initiate a matrix for dataframe coercion
+  row=c(1L,1L,2L,3L,3L,4L,4L,5L)
+  col=c(2L,4L,1L,3L,4L,1L,2L,2L)
+  val=c(-1.2144736,2.1060456,0.9140117,0.7074838,-0.8678475,-1.5930475, -0.7063034,1.6195045)
+  val=as.numeric(val)
+  df=data.frame(row,col,val)
+  row.names(df)=seq(1:length(val))
+  #sparse matrix that has the wrong dimension
+  sparse_tranformed_list1= list(nrow=as.integer(3),ncol=as.integer(3), df=df)
+  #sparse matrix that has the correct dimension
+  sparse_tranformed_list2= list(nrow=as.integer(5),ncol=as.integer(4), df=df)
+  
+  expect_false(identical(sparse_tranformed_list1,Transform_dense_matrix(A) ))
+  expect_equal(sparse_tranformed_list2,Transform_dense_matrix(A))
+  
+})
+
+test_that("whether the df correctly captures the non-zero value in dense matrix",{
+  row=c(1,1,1,2,3,3,4,4,5)
+  col=c(2,4,3,1,3,4,1,2,2)
+  val=c(-1.2144736,2.1060456,0,0.9140117,0.7074838,-0.8678475,-1.5930475, -0.7063034,1.6195045)
+  df=cbind(row,col,val)
+  #sparse matrix that has zero values in it.
+  sparse_tranformed_list= list(nrow=as.integer(3),ncol=as.integer(3), df=df)
+  
+  expect_false(identical(sparse_tranformed_list,Transform_dense_matrix(A) ))
+})
+
+test_that("whether the df correctly captures the order of the dense matrix",{
+  order_denseToSparsedf=order(Transform_dense_matrix(A)$df$row,Transform_dense_matrix(A)$df$col)
+  row=c(1,1,2,3,3,4,4,5)
+  col=c(2,4,1,3,4,1,2,2)
+  true_order=order(row,col)
+  
+  expect_equal(true_order,order_denseToSparsedf)
+}
+)
+
+test_that("whether the df correctly captures the value of the dense matrix",{
+  val_denseToSparsedf=Transform_dense_matrix(A)$df$val
+  val=c(-1.2144736,2.1060456,0.9140117,0.7074838,-0.8678475,-1.5930475, -0.7063034,1.6195045)
+  
+  expect_equal(val_denseToSparsedf,val)
+}
+)
+```
+
+####Test for Tranform_sparse_matrix function
+
++ Test whether the dimension of sparse matrix tranformed from a dense matrix is matched of original dimension. 
+
++ Check Values for a given location of a dense matrix from the output of function is matched with the location in the real dense matrice.
+
+```{r,eval=FALSE}
+row=c(1L,1L,2L,3L,3L,4L,4L,5L)
+col=c(2L,4L,1L,3L,4L,1L,2L,2L)
+val=c(-1.2144736,2.1060456,0.9140117,0.7074838,-0.8678475,-1.5930475, -0.7063034,1.6195045)
+val=as.numeric(val)
+df=data.frame(row,col,val)
+row.names(df)=seq(1:length(val))
+SparseA=list(nrow=as.integer(5),ncol=as.integer(4), df=df)
+#whether the dimension of sparse matrix tranformed from a dense matrix is matched of original dimension 
+test_that("Check Dimension ",{
+  #Initiate 2 dense matrices for comparisons.
+  A = matrix(c(0.0000000, -1.2144736, 0.0000000,  2.1060456,
+               0.9140117,  0.0000000, 0.0000000,  0.0000000,
+               0.0000000,  0.0000000, 0.7074838, -0.8678475,
+               -1.5930475, -0.7063034, 0.0000000,  0.0000000,
+               0.0000000,  1.6195045, 0.0000000,  0.0000000),nrow = 5,ncol = 4,byrow = T)
+  
+  A1= matrix(c(0.0000000, -1.2144736, 0.0000000,  2.1060456,
+               0.9140117,  0.0000000, 0.0000000,  0.0000000,
+               0.0000000,  0.0000000, 0.7074838, -0.8678475,
+               -1.5930475, -0.7063034, 0.0000000,  0.0000000,
+               0.0000000,  1.6195045, 0.0000000,  0.0000000),nrow = 4,ncol = 5,byrow = F)
+  #Test whether the output of function has the same dimensions as the true dense matrices.
+  expect_equal(dim(A)[1], dim(Transform_sparse_matrix(SparseA))[1])
+  expect_equal(dim(A)[2], dim(Transform_sparse_matrix(SparseA))[2])
+  expect_false(dim(A1)[1]==dim(Transform_sparse_matrix(SparseA))[1])
+  expect_false(dim(A1)[2]==dim(Transform_sparse_matrix(SparseA))[2])
+})
+
+test_that("Check Values for a given location is matched",{
+  A = matrix(c(0.0000000, -1.2144736, 0.0000000,  2.1060456,
+               0.9140117,  0.0000000, 0.0000000,  0.0000000,
+               0.0000000,  0.0000000, 0.7074838, -0.8678475,
+               -1.5930475, -0.7063034, 0.0000000,  0.0000000,
+               0.0000000,  1.6195045, 0.0000000,  0.0000000),nrow = 5,ncol = 4,byrow = T)
+  
+  A1= matrix(c(0.0000000, -1.2144736, 0.0000000,  2.1060456,
+               0.9140117,  0.0000000, 0.0000000,  0.0000000,
+               0.0000000,  0.0000000, 0.7074838, -0.8678475,
+               -1.5930475, -0.7063034, 0.0000000,  0.0000000,
+               0.0000000,  1.6195045, 0.0000000,  0.0000000),nrow = 4,ncol = 5,byrow = F)
+  #Order of the non zero value in the true dense matrix and use it for test of our Transform_sparse_matrix function
+  non_zero_A_unordered=which(A != 0, arr.ind = TRUE)
+  non_zero_A_ordered=non_zero_A_unordered[order(non_zero_A_unordered[,1],non_zero_A_unordered[,2],decreasing = F),]
+  
+  #We use the result return by Transform_sparse_matrix function for test
+  transformed=Transform_sparse_matrix(SparseA)
+  #Find out the order of the "tranformed" matrix
+  non_zero_transformed_unordered=which(transformed!= 0, arr.ind = TRUE)
+  non_zero_transformed_ordered=non_zero_A_unordered[order(non_zero_transformed_unordered[,1],non_zero_transformed_unordered[,2]),]
+  
+  expect_equal(non_zero_transformed_ordered,non_zero_A_ordered)
+  expect_false(all(non_zero_transformed_ordered==non_zero_A_unordered))
+})
+```
+
+####Test for Matrix_Multiplication Function
+
++ Initiate two sparse matrice for multiplication and form corresponding dense matrice, and then used for tests.
+
++ Multiplication of two sparse matric is the same with muplication of two dense matrice.
+
++ Multiplication of one dense matrix and one sparse matrix has the same output of the multiplication of two dense matrices.
+
++ Multiplication of the same "nrow" and "ncol" should return error, which is not of appropriate type for matrice multiplication.
+
+```{r,eval=FALSE}
+#Initiate Two Sparse Matrix for multiplication
+row=c(1L,1L,2L,3L,3L,4L,4L,5L)
+col=c(2L,4L,1L,3L,4L,1L,2L,2L)
+val=c(1,2,3,4,5,6,7,8)
+val=as.numeric(val)
+df=data.frame(row,col,val)
+row.names(df)=seq(1:length(val))
+SparseA=list(nrow=as.integer(5),ncol=as.integer(4), df=df)
+
+row=c(1L,1L,2L,2L,2L,3L,4L,4L)
+col=c(2L,4L,1L,4L,5L,3L,1L,3L)
+val=c(3,6,1,7,8,4,2,5)
+val=as.numeric(val)
+df=data.frame(row,col,val)
+row.names(df)=seq(1:length(val))
+SparseB=list(nrow=as.integer(4),ncol=as.integer(5), df=df)
+#Form corresponding dense matrix
+denseA=Transform_sparse_matrix(SparseA)
+denseB=Transform_sparse_matrix(SparseB)
+#multiplication of two sparse matric is the same with muplication of two dense matrix
+expect_identical(Transform_sparse_matrix(matrix_multiplication(SparseA,SparseB)),denseA %*% denseB)
+#multiplication of one dense matrix and one sparse matrix has the same output of the multiplication of two dense matrices.
+expect_identical(matrix_multiplication(SparseA,denseB),denseA %*% denseB)
+expect_identical(matrix_multiplication(denseA,SparseB),denseA %*% denseB)
+#Multiplication of the same "nrow" and "ncol" should return error, which is not of appropriate type for matrice multiplication.
+expect_error(Transform_sparse_matrix(matrix_multiplication(SparseA,SparseA)))
+expect_error(Transform_dense_matrix(matrix_multiplication(denseA,denseA)))
+```
+
+## Shiny Weather
+
+###Task 1 - Getting data from forecast.io
+I wrote a single function that accepts an API key, latitude, and longitude and returns a data frame containing the hourly forecast for the given location. The Dark Sky forecast API provides a number of different weather related predictions - all of these quantities are returned by the function "get_locs_weather" along with a properly formated date-time.
+
+Besause the Dark Sky API provides us with a json file with all quantities of weather forecast, so we just need to use the "fromJSON" and "readLines" function from the "jsonLite" packages to scrape the json file from the API. 
+
+After we turned the json file from the website into dataframe in R, then we can start to extract the weather forecast information of interests- we extract hourly weather forecast labled as "hourly" in the list.
+
++ We turn the time which is unix coding into local time using base R function: as.POSIXlt
++ We also turn turn "precipProbability" and "humidity" into percentage scale.
++ Transform the tempreture from Fahrenheit to Celsius.
+```{r,eval=FALSE}
+get_locs_weather = function(key, lat, long) {
+      #url to call from API
+      url = paste("https://api.forecast.io/forecast",key,paste(lat,long,sep = ","),sep="/")
+      #read json file from web links and save as a list
+      json_data <- fromJSON(paste(readLines(url, warn = "F"), collapse=""))
+      #Extract hourly weather forecast
+      min_weather_forecast=json_data$hourly$data
+      min_weather_forecast[,1]=base::as.POSIXct(min_weather_forecast[,1],origin="1970-01-01")
+      min_weather_forecast$precipProbability=min_weather_forecast$precipProbability*100
+      min_weather_forecast$humidity=min_weather_forecast$humidity*100
+      #Transform Fahrenheit to Celsius
+      min_weather_forecast$temperature=round((min_weather_forecast$temperature - 32) *(5/9),digits = 0)
+      min_weather_forecast$apparentTemperature=round((min_weather_forecast$apparentTemperature - 32) *(5/9),digits = 0)
+      min_weather_forecast=min_weather_forecast[,-3]
+      return(min_weather_forecast)
+}
+```
+
+###Task 2 - Shiny Predictions
+
+The interactive weather forecast app with Dark Sky API is embedded in this r markdown file. Several options should be noticed by users before using this app.
+
+####Provide the weather forecate 57 international cities and location information.
+
+The list of city is illustrated as below, and given the name of city, we are able to use another API tool to return the geographic location information, such as "latitude" and "longitude".
+
+```{r}
+city_list = c("HongKong,HongKong","Singapore,Singapore","Bangkok,Thailand","London,UK	","Paris,France","Macau,Macau	","NewYorkCity,USA	","Shenzhen,China","KualaLumpur,Malaysia","Antalya,Turkey","Istanbul,Turkey","Dubai,United Arab Emrates","Seoul,South Korea","Rome,Italy","Phuket,Thailand","Guangzhou,China","Mecca,SaudiArabia","Pattaya,Thailand","Taipei,Taiwan","Miami,USA","Prague,Czech","Shanghai,China","Las,Vegas,USA","Milan,Italy","Barcelona,Spain","Moscow,Russia","Amsterdam,Netherland"	,"Vienna,Austria","Venice,Italy","LosAngeles,USA","Lima,Peru","Tokyo,Japan","Johannesburg,SouthAfica","Beijing,China","Sofia,Bulgaria","Orlando,USA","Berlin,Germany","Budapest,Hungary","HoChiMinhCity,Vietam","Florence,Italy","Madrid,Spain","Warsaw,Poland","Doha,Qatar","Nairobi,Kenya","Delhi,India","Mumbai,India","Chennai,India","Mexico,City,Mexico","Dublin,Ireland","SanFrancisco,USA","Hangzhou,China","Denpasar,Indonesia","St.Petersburg,Russia","Muğla,Turkey","Brussels,Belgium","Burgas,Bulgaria","Munich,Germany")
+suppressMessages(library(jsonlite))
+```
+
+This function "get_city_locs" provides with us information of longitude and latitude of a specific city. The function is constructed very similar as the function "get_locs_weather".
+
+```{r,eval=FALSE}
+get_city_locs = function(city) {
+  #url of city location API call
+  url_city = paste0("http://api.openweathermap.org/data/2.5/weather?q=",city,"&appid=2de143494c0b295cca9337e1e96b00e0")
+  #read into R as dataframe using "fromJSON" and "readLines"
+  city_loc=as.data.frame(fromJSON(paste(readLines(url_city,warn ="F"),collapse=""))$coord)
+  city_loc=city_loc[,c(2,1)]
+  return(city_loc)
+}
+```
+
+####Shiny APP
+
+After we have enough preparation for implementing the shiny app, we can use these functions to construct a shiy app that allow an interactive interface of weather forecast.
+
+#####Input of Shiny
+The code below specifies the layout of interactive urser interface. In the sidebar panel, user are allow to navigate through all major 57 international cities and choose the one they are interested in the future 24 hour weather forecast. And also there are checkboxes that allow user to select a second quantities besides the visualization of tempreture plot, more options such as "Precipitate Probability", "Humidity Forecast", "Wind Speed Forecast","Pressure Forecast". When clicking the box, there will show corresponding plots in the main panel under the tab panel "Hourly Weather Visualization". 
+
+We also create a main panel that also allows the people to navigate through different options to watch the result. In the tab panel "Hourly Weather Visualization", we can visualize the trend of future weather. In the tab panel "Hourly Weather Forcast", user can use the datatable with all the future weather statistics. In the tab penal "Location", it shows the latitude and longitude of a given city.
+
+```{r,eval=FALSE}
+ fluidPage(
+    titlePanel(
+      "Dark Sky API Weather Forecast"
+    ),
+    icon("cloud", class ="cloud fa-5x"),
+  sidebarLayout (
+    sidebarPanel(
+      selectInput("select_city", label = "Citys:",
+              choices = city_list, selected = "Beijing,China"),
+      checkboxInput("show_precipPro",label = "Precipitate Probability"),
+      checkboxInput("show_humidity",label = "Humidity Forecast"),
+      checkboxInput("show_windspeed",label = "Wind Speed Forecast"),
+      checkboxInput("show_pressure",label = "Pressure Forecast")
+    ),
+    mainPanel(
+      tabsetPanel(type = "tabs", 
+                  tabPanel("Hourly Weather Visualization", fluidRow(
+                                                        column(12,plotOutput("weather"),br()
+                                                        ),
+                                                        column(12,plotOutput("precipProp"),br()
+                                                        ),
+                                                        column(12,plotOutput("humidity"),br()
+                                                        ),
+                                                        column(12,plotOutput("windspeed"),br()
+                                                        ),
+                                                        column(12,plotOutput("pressure"),br()
+                                                        ))),
+                  tabPanel("Hourly Weather Forcast",dataTableOutput("hourly") ),
+                  tabPanel("Location", tableOutput("loc_df"))
+    ))))
+```
+
+#####Output of the Shiny
+
++ Dataframe of location (renderTable)
++ Hourly weather forecast table by using "get_locs_weather" function to produce the output.
++ Plots of future 24 hour temperature.
++ Plots of future 24-hour precipitation probability.
++ Plots of future 24-hour humidity.
++ Plots of future 24-hour wind speed.
++ Plots of future 24-hour pressure.
+
+```{r,eval=FALSE}
+#dataframe of location
+output$loc_df=renderTable({
+  url_city = paste0("http://api.openweathermap.org/data/2.5/weather?q=",input$select_city,"&appid=2de143494c0b295cca9337e1e96b00e0")
+  city_loc=as.data.frame(fromJSON(paste(readLines(url_city,warn = "F"), collapse=""))$coord)
+  city_loc=city_loc[,c(2,1)]
+  #change the name of column names
+  names(city_loc) = c("latitude","longitude")
+  city_loc
+})
+
+#Hour weather forecast table by using "get_locs_weather" function to produce the output.
+output$hourly = renderDataTable({
+  key = "d698ce563a4c44fae2e990b20f54e38b"
+  city_loc=get_city_locs(input$select_city)
+  get_locs_weather(key,city_loc[,1],city_loc[,2])
+})
+
+#Plots of future 24 hour temperature.
+output$weather= renderPlot({
+  par(mar= c(4,4,3,0.5))
+  key = "d698ce563a4c44fae2e990b20f54e38b"
+  city_loc=get_city_locs(input$select_city)
+  #getting the weather forcast
+  min_weather_forecast=get_locs_weather(key,city_loc[,1],city_loc[,2])
+  #plot and adjust
+  plot(x=min_weather_forecast[,1],y=min_weather_forecast$temperature,type = "l",ylab = "Hourly Tempreture Forecast(Celsius)", xlab = "Future 24 Hour",lwd=3)
+  #points
+  points(x=min_weather_forecast[,1],y=min_weather_forecast$temperature,col="red",pch=17,bg="dodgerblue")
+  box(col="dodgerblue")
+})
+
+#Plots of future 24-hour precipitation probability
+output$precipProp = renderPlot(
+  if (input$show_precipPro=="TRUE") {
+  par(mar= c(4,4,3,0.5))
+  key = "d698ce563a4c44fae2e990b20f54e38b"
+  city_loc=get_city_locs(input$select_city)
+  min_weather_forecast=get_locs_weather(key,city_loc[,1],city_loc[,2])
+  plot(x=min_weather_forecast[,1],y=min_weather_forecast$precipProbability,type = "l",ylab = "Hourly Precipitation Probability(%)", xlab = "Future 24 Hour",ylim = c(0,max(min_weather_forecast$precipProbability)+5),lwd=3,las=2)
+  points(x=min_weather_forecast[,1],y=min_weather_forecast$precipProbability,col="red",pch=17,bg="dodgerblue")
+  box(col="dodgerblue")
+  }
+)
+
+#Plots of future 24-hour humidity
+output$humidity = renderPlot(
+  if (input$show_humidity=="TRUE") {
+  par(mar= c(4,4,3,0.5))
+  key = "d698ce563a4c44fae2e990b20f54e38b"
+  city_loc=get_city_locs(input$select_city)
+  min_weather_forecast=get_locs_weather(key,city_loc[,1],city_loc[,2])
+  plot(x=min_weather_forecast[,1],y=min_weather_forecast$humidity,type = "l",ylab = "Hourly Humidity Forecast(%)", xlab = "Future 24 Hour",ylim = c(0,max(min_weather_forecast$humidity)+10),lwd=3,las=2)
+  points(x=min_weather_forecast[,1],y=min_weather_forecast$humidity,col="red",pch=17,bg="dodgerblue")
+  box(col="dodgerblue")
+  }
+)
+#Plots of future 24-hour wind speed
+output$windspeed = renderPlot(
+  if (input$show_windspeed=="TRUE") {
+  par(mar= c(4,4,3,0.5))
+  key = "d698ce563a4c44fae2e990b20f54e38b"
+  city_loc=get_city_locs(input$select_city)
+  min_weather_forecast=get_locs_weather(key,city_loc[,1],city_loc[,2])
+  plot(x=min_weather_forecast[,1],y=min_weather_forecast$windSpeed,type = "l",ylab = "Hourly Wind Speed Forecast (mph)", xlab = "Future 24 Hour",ylim = c(0,max(min_weather_forecast$windSpeed)+10),lwd=3,las=2)
+  points(x=min_weather_forecast[,1],y=min_weather_forecast$windSpeed,col="red",pch=17,bg="dodgerblue")
+  box(col="dodgerblue")
+  }
+)
+##Plots of future 24-hour pressure
+output$pressure = renderPlot(
+  if (input$show_pressure=="TRUE") {
+  par(mar= c(4,4,3,0.5))
+  key = "d698ce563a4c44fae2e990b20f54e38b"
+  city_loc=get_city_locs(input$select_city)
+  min_weather_forecast=get_locs_weather(key,city_loc[,1],city_loc[,2])
+  plot(x=min_weather_forecast[,1],y=min_weather_forecast$pressure,type = "l",ylab = "Hourly Pressure Forecast (mph)", xlab = "Future 24 Hour",ylim = c(min(min_weather_forecast$pressure)-10,max(min_weather_forecast$pressure)+10),lwd=3,las=2)
+  points(x=min_weather_forecast[,1],y=min_weather_forecast$pressure,col="red",pch=17,bg="dodgerblue")
+  box(col="dodgerblue")
+  }
+)
+
+```
+
+
+```{r,echo=FALSE}
+ fluidPage(
+    titlePanel(
+      "Dark Sky API Weather Forecast"
+    ),
+    icon("cloud", class ="cloud fa-5x"),
+  sidebarLayout (
+    sidebarPanel(
+      selectInput("select_city", label = "Citys:",
+              choices = city_list, selected = "Beijing,China"),
+      checkboxInput("show_precipPro",label = "Precipitate Probability"),
+      checkboxInput("show_humidity",label = "Humidity Forecast"),
+      checkboxInput("show_windspeed",label = "Wind Speed Forecast"),
+      checkboxInput("show_pressure",label = "Pressure Forecast")
+    ),
+    mainPanel(
+      tabsetPanel(type = "tabs", 
+                  tabPanel("Hourly Weather Forecast", fluidRow(
+                                                        column(12,plotOutput("weather"),br()
+                                                        ),
+                                                        column(12,plotOutput("precipProp"),br()
+                                                        ),
+                                                        column(12,plotOutput("humidity"),br()
+                                                        ),
+                                                        column(12,plotOutput("windspeed"),br()
+                                                        ),
+                                                        column(12,plotOutput("pressure"),br()
+                                                        ))),
+                  tabPanel("Hourly Weather Forcast",dataTableOutput("hourly") ),
+                  tabPanel("Location", tableOutput("loc_df"))
+    ))))
+
+output$loc_df=renderTable({
+  url_city = paste0("http://api.openweathermap.org/data/2.5/weather?q=",input$select_city,"&appid=2de143494c0b295cca9337e1e96b00e0")
+  city_loc=as.data.frame(fromJSON(paste(readLines(url_city,warn = "F"), collapse=""))$coord)
+  city_loc=city_loc[,c(2,1)]
+  names(city_loc) = c("latitude","longitude")
+  city_loc
+})
+
+get_locs_weather = function(key, lat, long) {
+      url = paste("https://api.forecast.io/forecast",key,paste(lat,long,sep = ","),sep="/")
+      json_data <- fromJSON(paste(readLines(url, warn = "F"), collapse=""))
+      min_weather_forecast=json_data$hourly$data
+      min_weather_forecast[,1]=base::as.POSIXct(min_weather_forecast[,1],origin="1970-01-01")
+      min_weather_forecast$precipProbability=min_weather_forecast$precipProbability*100
+      min_weather_forecast$humidity=min_weather_forecast$humidity*100
+      #Transform Fahrenheit to Celsius
+      min_weather_forecast$temperature=round((min_weather_forecast$temperature - 32) *(5/9),digits = 0)
+      min_weather_forecast$apparentTemperature=round((min_weather_forecast$apparentTemperature - 32) *(5/9),digits = 0)
+      min_weather_forecast=min_weather_forecast[,-3]
+      return(min_weather_forecast)
+}
+
+get_city_locs = function(city) {
+  url_city = paste0("http://api.openweathermap.org/data/2.5/weather?q=",city,"&appid=2de143494c0b295cca9337e1e96b00e0")
+  city_loc=as.data.frame(fromJSON(paste(readLines(url_city,warn ="F"),collapse=""))$coord)
+  city_loc=city_loc[,c(2,1)]
+  return(city_loc)
+}
+
+
+output$hourly = renderDataTable({
+  key = "d698ce563a4c44fae2e990b20f54e38b"
+  city_loc=get_city_locs(input$select_city)
+  get_locs_weather(key,city_loc[,1],city_loc[,2])
+
+})
+
+output$weather= renderPlot({
+  par(mar= c(4,4,3,0.5))
+  key = "d698ce563a4c44fae2e990b20f54e38b"
+  city_loc=get_city_locs(input$select_city)
+  min_weather_forecast=get_locs_weather(key,city_loc[,1],city_loc[,2])
+  plot(x=min_weather_forecast[,1],y=min_weather_forecast$temperature,type = "l",ylab = "Hourly Tempreture Forecast(Celsius)", xlab = "Future 24 Hour",lwd=3)
+  points(x=min_weather_forecast[,1],y=min_weather_forecast$temperature,col="red",pch=17,bg="dodgerblue")
+  box(col="dodgerblue")
+})
+
+output$precipProp = renderPlot(
+  if (input$show_precipPro=="TRUE") {
+  par(mar= c(4,4,3,0.5))
+  key = "d698ce563a4c44fae2e990b20f54e38b"
+  city_loc=get_city_locs(input$select_city)
+  min_weather_forecast=get_locs_weather(key,city_loc[,1],city_loc[,2])
+  plot(x=min_weather_forecast[,1],y=min_weather_forecast$precipProbability,type = "l",ylab = "Hourly Precipitation Probability(%)", xlab = "Future 24 Hour",ylim = c(0,max(min_weather_forecast$precipProbability)+10),lwd=3,las=2)
+  points(x=min_weather_forecast[,1],y=min_weather_forecast$precipProbability,col="red",pch=17,bg="dodgerblue")
+  box(col="dodgerblue")
+  }
+)
+
+output$humidity = renderPlot(
+  if (input$show_humidity=="TRUE") {
+  par(mar= c(4,4,3,0.5))
+  key = "d698ce563a4c44fae2e990b20f54e38b"
+  city_loc=get_city_locs(input$select_city)
+  min_weather_forecast=get_locs_weather(key,city_loc[,1],city_loc[,2])
+  plot(x=min_weather_forecast[,1],y=min_weather_forecast$humidity,type = "l",ylab = "Hourly Humidity Forecast(%)", xlab = "Future 24 Hour",ylim = c(0,max(min_weather_forecast$humidity)+10),lwd=3,las=2)
+  points(x=min_weather_forecast[,1],y=min_weather_forecast$humidity,col="red",pch=17,bg="dodgerblue")
+  box(col="dodgerblue")
+  }
+)
+
+output$windspeed = renderPlot(
+  if (input$show_windspeed=="TRUE") {
+  par(mar= c(4,4,3,0.5))
+  key = "d698ce563a4c44fae2e990b20f54e38b"
+  city_loc=get_city_locs(input$select_city)
+  min_weather_forecast=get_locs_weather(key,city_loc[,1],city_loc[,2])
+  plot(x=min_weather_forecast[,1],y=min_weather_forecast$windSpeed,type = "l",ylab = "Hourly Wind Speed Forecast (mph)", xlab = "Future 24 Hour",ylim = c(0,max(min_weather_forecast$windSpeed)+10),lwd=3,las=2)
+  points(x=min_weather_forecast[,1],y=min_weather_forecast$windSpeed,col="red",pch=17,bg="dodgerblue")
+  box(col="dodgerblue")
+  }
+)
+
+output$pressure = renderPlot(
+  if (input$show_pressure=="TRUE") {
+  par(mar= c(4,4,3,0.5))
+  key = "d698ce563a4c44fae2e990b20f54e38b"
+  city_loc=get_city_locs(input$select_city)
+  min_weather_forecast=get_locs_weather(key,city_loc[,1],city_loc[,2])
+  plot(x=min_weather_forecast[,1],y=min_weather_forecast$pressure,type = "l",ylab = "Hourly Pressure Forecast (mph)", xlab = "Future 24 Hour",ylim = c(min(min_weather_forecast$pressure)-10,max(min_weather_forecast$pressure)+10),lwd=3,las=2)
+  points(x=min_weather_forecast[,1],y=min_weather_forecast$pressure,col="red",pch=17,bg="dodgerblue")
+  box(col="dodgerblue")
+  }
+)
+
+```
+
+
+
+
+
+
+
+
