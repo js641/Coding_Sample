@@ -50,7 +50,7 @@ is_valid_sparse = function (sparse_list) {
 ```
 
 ###Transform sparse matrix
-The "Transform_sparse_matrix" function accepts a sparse matrix as its argument and returns a dense matrix. The approach I adopted for writing this function is specified as below.
+iiiiThe "Transform_sparse_matrix" function accepts a sparse matrix as its argument and returns a dense matrix. The approach I adopted for writing this function is specified as below.
 
 + Test whether the input sparse matrix is valid
 + Initiate a matrix with "0" in it and preparing for restore the non-zero value in the sparse matrix.
